@@ -175,3 +175,13 @@ def home():
         "message":"Resume Parsed Successfully"
     }
 
+
+@app.post("/chat")
+def chat(request: ChatRequest):
+    resume_text = read_pdf(Path("Ayush_Kant .pdf"))
+    resume = parse_resume(resume_text)
+    answer = ask_Candidate(request.question, resume)
+
+    return {
+        "answer": answer
+    }
