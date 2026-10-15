@@ -72,10 +72,14 @@ def ask_Candidate(question: str, resume: Resume):
                 "role":"user",
                 "content":question
             }
-        ]
+        ],
+        stream= True
     )
 
-    return response.choices[0].message.content
+    for chunk in response:
+        content = chunk.choices[0].delta.content
+        if content:
+            yield content
 
 
 
@@ -198,10 +202,12 @@ def home():
     }
 
 
+from fastapi.responses import StreamingResponse
+
 @app.post("/chat")
 def chat(request: ChatRequest):
-    answer = ask_Candidate(request.question, resume_data)
-
-    return {
-        "answer": answer
-    }
+    return StreamingResponse(
+        ask_Candidate(request.question, resume_data),
+        media_type = "text/plain"    
+    )
+    
