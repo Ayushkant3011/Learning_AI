@@ -19,7 +19,11 @@ client = Groq(api_key = my_api_key)
 
 MODEL="openai/gpt-oss-20b"
 
-app = FastAPI()
+
+BASE_DIR = Path(__file__).resolve().parent
+
+PROMPT_PATH = BASE_DIR / "prompts" / "candidate_system_prompt.txt"
+
 
 #PARSING RESUME
 class Experience(BaseModel):
@@ -49,24 +53,13 @@ class ChatRequest(BaseModel):
 
 
 def ask_Candidate(question: str, resume: Resume):
-    system_prompt=f"""
-        You are an AI Assistant representing a job condidate.
-
-        Below is everything you know about the candidate.
-
-        {resume.model_dump_json(indent=2)}
-
-    Rules:
-    1. Answer only using this information.
-
-    2. Never Hallucinate.
-
-    3.If information is unavailable, say "I dont have enough information to answer that
-
-    4. Be Professional
-
-    5. Answer as if HR is interviewing this candidate.
-"""
+    with open(PROMPT_PATH, "r", encoding="utf-8") as file:
+        prompt_template = file.read()
+    
+    system_prompt=prompt_template.replace(
+        "{resume_json}",
+        resume.model_dump_json(indent=2)
+    )
     response = client.chat.completions.create(
         model=MODEL,
 
@@ -116,6 +109,18 @@ def parse_resume(resume_text):
         3. If a list has no information, return an empty list
         4. Include internships inside experiences.
         5. Extract skills mentioned across the entire resume.
+        
+        6. Calculate total_experience_years from the candidate's
+            employment dates when sufficient information is available.
+        
+        7. Use the current date to calculate experience for ongoing roles.
+        
+        8. Do not count overlapping employment periods twice.
+        
+        9. If employment dates are insufficient to calculate a
+                reliable total, return null.
+        
+                 
     """
 
     user_prompt= f"""
@@ -163,24 +168,39 @@ def read_pdf(file_path:Path):
             text += page_text + "\n"
     return text
 
+from contextlib import asynccontextmanager
 
+resume_data = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global resume_data
+
+    print("Loading and parsing resume...")
+
+    resume_text = read_pdf(Path("Ayush_Kant_Resume.pdf"))
+    resume_data = parse_resume(resume_text)
+
+    print("Resume parsed successfully!")
+
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.get("/")
 def home():
-    resume_text = read_pdf(Path("Ayush_Kant .pdf"))
-    resume = parse_resume(resume_text)
-    print(resume.model_dump_json(indent=2))
     return {
-        "message":"Resume Parsed Successfully"
+        "message": "Resume Parsed Successfully",
+        "resume": resume_data.model_dump()
     }
 
 
 @app.post("/chat")
 def chat(request: ChatRequest):
-    resume_text = read_pdf(Path("Ayush_Kant .pdf"))
-    resume = parse_resume(resume_text)
-    answer = ask_Candidate(request.question, resume)
+    answer = ask_Candidate(request.question, resume_data)
 
     return {
         "answer": answer
